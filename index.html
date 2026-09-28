@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Python IDE</title>
+<style>
+:root{--bg:#1e1e1e;--pn:#252526;--fg:#d4d4d4;--ac:#0e639c;--bd:#3c3c3c;--er:#f48771}
+[data-t=light]{--bg:#fff;--pn:#f3f3f3;--fg:#222;--ac:#0066b8;--bd:#ccc;--er:#c00}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:14px system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 8px;background:var(--pn);border-bottom:1px solid var(--bd)}
+button{background:var(--ac);color:#fff;border:0;border-radius:4px;padding:8px 12px;cursor:pointer;min-height:36px}
+button.g{background:transparent;color:var(--fg);border:1px solid var(--bd)}
+button:focus-visible,textarea:focus-visible{outline:2px solid #fff;outline-offset:1px}
+#st{margin-left:auto;font-size:12px}
+main{flex:1;display:flex;min-height:0}
+aside{width:170px;background:var(--pn);border-right:1px solid var(--bd);padding:6px;overflow:auto}
+aside div{padding:6px;cursor:pointer;border-radius:3px;display:flex;justify-content:space-between}
+aside div.on{background:var(--ac);color:#fff}
+.col{flex:1;display:flex;flex-direction:column;min-width:0}
+#ed{flex:1;resize:none;border:0;background:var(--bg);color:var(--fg);font:14px/1.5 ui-monospace,Menlo,Consolas,monospace;padding:8px;tab-size:4;white-space:pre;overflow:auto;min-height:80px}
+#stdin{height:54px;resize:vertical;border:0;border-top:1px solid var(--bd);background:var(--pn);color:var(--fg);font:13px monospace;padding:6px}
+#out{height:34%;margin:0;overflow:auto;background:var(--pn);border-top:1px solid var(--bd);padding:8px;font:13px/1.4 monospace;white-space:pre-wrap;word-break:break-word}
+.e{color:var(--er)}
+footer{padding:3px 8px;font-size:12px;background:var(--ac);color:#fff}
+#ir{display:none;gap:6px;padding:6px;background:var(--pn)}#ir input{flex:1;padding:6px;background:var(--bg);color:var(--fg);border:1px solid var(--bd)}
+@media(max-width:640px){aside{width:100px}}
+</style></head><body data-t="dark">
+<header>
+<b>🐍 Python IDE</b>
+<button id="run" disabled>▶ Run</button><button id="stop" class="g" disabled>■ Stop</button><button id="rst" class="g">↻ Restart</button>
+<button id="nf" class="g">+ File</button><button id="dl" class="g">⬇ File</button><button id="th" class="g">Theme</button>
+<span id="st" role="status" aria-live="polite">Loading Python…</span>
+</header>
+<main>
+<aside id="fl" aria-label="Files"></aside>
+<div class="col">
+<textarea id="ed" spellcheck="false" aria-label="Code editor"></textarea>
+<textarea id="stdin" placeholder="Input (one line per input() call) — used when interactive input is unavailable" aria-label="Program input"></textarea>
+<div id="ir"><input id="iv" aria-label="Type input"><button id="isb">Submit</button></div>
+<pre id="out" aria-label="Output" aria-live="polite"></pre>
+</div>
+</main>
+<footer id="sb">Python … | Ln 1, Col 1</footer>
+<script>
+const V="0.26.4",BASE="https://cdn.jsdelivr.net/pyodide/v"+V+"/full/";
+const $=id=>document.getElementById(id);
+const DEF={"main.py":'print("Hello from Python!")\nname = input("What is your name? ")\nprint(f"Hello, {name}!")\n\nfrom utils import add\nprint(add(5, 10))\n',"utils.py":"def add(a, b):\n    return a + b\n"};
+let files,cur,w,busy=false,ready=false,pyver="",sab=null,timer;
+try{files=JSON.parse(localStorage.getItem("pyide.files"))||{...DEF}}catch{files={...DEF}}
+cur=Object.keys(files)[0];
+function save(){try{localStorage.setItem("pyide.files",JSON.stringify(files))}catch(e){put("Storage error: "+e.message,1)}}
+function put(t,err){const s=document.createElement("span");if(err)s.className="e";s.textContent=t;$("out").appendChild(s);
+ if($("out").textContent.length>500000){$("out").textContent="[output truncated]\n";stopRun()}$("out").scrollTop=1e9}
+function status(s){$("st").textContent=s}
+function safeName(n){n=(n||"").trim();return /^[\w\-]+(\.(py|txt|json|csv|md))?$/.test(n)?(n.includes(".")?n:n+".py"):null}
+function renderFiles(){const f=$("fl");f.textContent="";Object.keys(files).forEach(n=>{
+ const d=document.createElement("div");d.tabIndex=0;if(n===cur)d.className="on";const s=document.createElement("span");s.textContent=n;d.appendChild(s);
+ const x=document.createElement("span");x.textContent="✕";x.title="Delete";x.onclick=e=>{e.stopPropagation();if(Object.keys(files).length>1&&confirm("Delete "+n+"?")){delete files[n];if(cur===n)cur=Object.keys(files)[0];save();renderFiles();load()}};d.appendChild(x);
+ d.onclick=()=>{files[cur]=$("ed").value;cur=n;renderFiles();load()};f.appendChild(d)})}
+function load(){$("ed").value=files[cur];pos()}
+function pos(){const e=$("ed"),t=e.value.slice(0,e.selectionStart).split("\n");$("sb").textContent=`Python ${pyver||"…"} | Ln ${t.length}, Col ${t[t.length-1].length+1} | Spaces: 4 | ${$("st").textContent}`}
+$("ed").addEventListener("input",()=>{files[cur]=$("ed").value;status("● Unsaved");clearTimeout(timer);timer=setTimeout(()=>{save();status("✓ Saved")},600)});
+$("ed").addEventListener("keyup",pos);$("ed").addEventListener("click",pos);
+$("ed").addEventListener("keydown",e=>{const t=e.target;
+ if(e.key==="Tab"){e.preventDefault();t.setRangeText("    ",t.selectionStart,t.selectionEnd,"end");t.dispatchEvent(new Event("input"))}
+ if(e.key==="Enter"&&!e.ctrlKey){const b=t.value.slice(0,t.selectionStart),l=b.split("\n").pop(),ind=l.match(/^ */)[0]+(/:\s*$/.test(l)?"    ":"");e.preventDefault();t.setRangeText("\n"+ind,t.selectionStart,t.selectionEnd,"end");t.dispatchEvent(new Event("input"))}});
+document.addEventListener("keydown",e=>{if(e.key==="F5"||(e.ctrlKey&&e.key==="Enter")){e.preventDefault();run()}
+ if(e.ctrlKey&&e.key==="s"){e.preventDefault();save();status("✓ Saved")}});
+$("nf").onclick=()=>{const n=safeName(prompt("File name (e.g. helper.py):"));if(!n)return;if(files[n]){alert("Already exists");return}files[n]="";cur=n;save();renderFiles();load()};
+$("dl").onclick=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([files[cur]],{type:"text/plain"}));a.download=cur;a.click();URL.revokeObjectURL(a.href)};
+$("th").onclick=()=>{const b=document.body;b.dataset.t=b.dataset.t==="dark"?"light":"dark";localStorage.setItem("pyide.theme",b.dataset.t)};
+document.body.dataset.t=localStorage.getItem("pyide.theme")||"dark";
+
+const WSRC=`
+let py,sab,flag,bytes;
+self.onmessage=async e=>{const m=e.data;
+ if(m.t==="init"){try{importScripts(m.base+"pyodide.js");py=await loadPyodide({indexURL:m.base});
+  py.setStdout({batched:s=>postMessage({t:"out",s:s+"\\n"})});py.setStderr({batched:s=>postMessage({t:"err",s:s+"\\n"})});
+  sab=m.sab;if(sab){flag=new Int32Array(sab);bytes=new Uint8Array(sab,8)}
+  self.js_input=p=>{postMessage({t:"input",p:String(p)});
+   if(sab){Atomics.store(flag,0,0);Atomics.wait(flag,0,0);const n=flag[1];return new TextDecoder().decode(bytes.slice(0,n).slice())}
+   return null};
+  py.runPython("import sys;v=sys.version.split()[0]");postMessage({t:"ready",v:py.globals.get("v"),rv:py.version})}
+  catch(x){postMessage({t:"fail",s:String(x)})}}
+ if(m.t==="run"){const t0=performance.now();let code=0;
+  try{for(const[n,c]of Object.entries(m.files))py.FS.writeFile("/home/pyodide/"+n,c);
+   py.globals.set("_stdin",m.stdin);
+   await py.runPythonAsync(\`
+import sys,os,builtins,runpy
+os.chdir('/home/pyodide')
+if '/home/pyodide' not in sys.path: sys.path.insert(0,'/home/pyodide')
+for _k in [k for k in sys.modules if getattr(sys.modules[k],'__file__',None) and str(sys.modules[k].__file__).startswith('/home/pyodide')]: del sys.modules[_k]
+_q=list(_stdin)
+from js import js_input
+def _input(p=''):
+    r=js_input(p)
+    if r is None:
+        if not _q: raise EOFError('No input available. Add lines in the Input box, or enable cross-origin isolation for interactive input().')
+        r=_q.pop(0); sys.stdout.write(str(p)+r+'\\\\n')
+    return r
+builtins.input=_input
+runpy.run_path(\${JSON.stringify(m.main)},run_name='__main__')
+\`)}catch(x){code=1;postMessage({t:"err",s:String(x.message||x)+"\\n"})}
+  postMessage({t:"done",code,ms:performance.now()-t0})}};`;
+
+function start(){ready=false;$("run").disabled=$("stop").disabled=true;status("Loading Python runtime…");
+ try{sab=self.crossOriginIsolated&&typeof SharedArrayBuffer!=="undefined"?new SharedArrayBuffer(8+16384):null;
+  w=new Worker(URL.createObjectURL(new Blob([WSRC],{type:"text/javascript"})));}catch(e){status("Worker unsupported");put("Web Workers unavailable: "+e.message+"\n",1);return}
+ w.onerror=e=>{status("Worker crashed");put("Worker error: "+e.message+"\n",1);busy=false};
+ w.onmessage=e=>{const m=e.data;
+  if(m.t==="ready"){ready=true;pyver=m.v;status("Python Ready");$("run").disabled=false;pos();put(`Python ${m.v} (Pyodide ${m.rv}) ready.\n`)}
+  else if(m.t==="fail"){status("Runtime failed");put("Runtime failed to load: "+m.s+"\nCheck your internet connection, then press Restart.\n",1)}
+  else if(m.t==="out")put(m.s);else if(m.t==="err")put(m.s,1);
+  else if(m.t==="input"){if(sab){status("Waiting for input…");$("ir").style.display="flex";$("iv").focus();$("iv").placeholder=m.p}}
+  else if(m.t==="done"){busy=false;$("run").disabled=false;$("stop").disabled=true;$("ir").style.display="none";
+   status("Finished");put(`\n[Exit code: ${m.code} | ${(m.ms/1000).toFixed(2)}s]\n`,m.code)}};
+ w.postMessage({t:"init",base:BASE,sab})}
+function submitInput(){const v=$("iv").value,b=new TextEncoder().encode(v).slice(0,16000),f=new Int32Array(sab);
+ new Uint8Array(sab,8).set(b);f[1]=b.length;put(v+"\n");$("iv").value="";$("ir").style.display="none";status("Running…");Atomics.store(f,0,1);Atomics.notify(f,0)}
+$("isb").onclick=submitInput;$("iv").onkeydown=e=>{if(e.key==="Enter")submitInput()};
+function run(){if(!ready||busy)return;files[cur]=$("ed").value;save();busy=true;$("run").disabled=true;$("stop").disabled=false;$("out").textContent="";status("Running…");
+ w.postMessage({t:"run",files,main:cur.endsWith(".py")?cur:"main.py",stdin:$("stdin").value?$("stdin").value.split("\n"):[]})}
+function stopRun(){if(!w)return;w.terminate();busy=false;put("\n[Stopped]\n",1);status("Stopped — restarting runtime…");start()}
+$("run").onclick=run;$("stop").onclick=stopRun;$("rst").onclick=()=>{if(w)w.terminate();busy=false;$("out").textContent="";start()};
+renderFiles();load();save();start();
+</script></body></html>
